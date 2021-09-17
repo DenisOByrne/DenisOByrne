@@ -1,0 +1,492 @@
+---
+title: "AMS 580 Final Exam Part 1"
+author: "Denis O'Byrne"
+date: "5/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Part I. Supervised Learning with the GreatUnknown Data 
+# The GreatUnknown.csv data contain 12 predictors and one binary response variable y (= 0 or 1), which is the true class label.
+
+# For this dataset, sensitivity is defined as a case labeled 1 being classified to label 1, while specificity is defined as a case labeled 0 being classified to label 0.
+
+# **Question 1**
+
+# 1. For the entire dataset, please perform the data cleaning as instructed before; namely, delete observations with missing value(s). Please report how many cases (namely, data points) are left after this step. Then please use the random seed 123 to divide the cleaned data into 75% training and 25% testing. 
+
+```{r}
+library(tidyverse)
+library(caret)
+library(neuralnet)
+library(randomForest)
+library(rpart)
+library(rattle)
+library(MASS)
+library(tidyverse)
+library(glmnet)
+library(leaps)
+library(ggplot2)
+
+
+gun<-read.csv("C:/Users/denis/Downloads/GreatUnknown.csv", header = TRUE)
+
+head(gun)
+
+dim(gun)
+
+gun<-na.omit(gun)
+
+dim(gun)
+```
+
+# **There are 4601 observations (none were missing data)**
+
+```{r}
+set.seed(123)
+training.samples <- createDataPartition(gun$y,p = 0.75, list = FALSE)
+train.data  <- gun[training.samples, ]
+test.data <- gun[-training.samples, ]
+
+nrow(train.data)
+nrow(test.data)
+```
+
+# **Question 2**
+
+# 2. Next, Please use the neuralnet package in R to build the various neural network classifiers. For this question, we shall NOT perform data standardization (normalization). 
+
+# **Part a**	Please first build the best classifier to predict the class label using the training data and the Perceptron model with (i) no hidden layer, (ii) the default loss function of “sse”, and (iii) the default activation function of “logistic”. Please plot the perceptron model obtained using the training data. Please compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy using the testing data
+
+```{r}
+set.seed(123)
+model = neuralnet(y~., data = train.data, hidden = 0, err.fct = "sse", linear.output = F)
+plot(model, rep = "best")
+
+probabilities = predict(model, test.data)
+predicted.classes = ifelse(probabilities > 0.5, 1, 0)
+
+confusionMatrix(factor(predicted.classes), factor(test.data$y), positive = "1")
+```
+
+# Sensitivity = 0.8355263
+```{r}
+381/(381+75)
+```
+
+# Specificity = 0.9351585
+```{r}
+649/(649+45)
+```
+
+# Accuracy = 0.8956522
+```{r}
+(381+649)/(381+649+75+45)
+```
+
+
+
+# **Part b**	Next we shall build the best classifier to predict the class label using the training data and the Perceptron model with (i) no hidden layer, (ii) the loss function of “ce” (namely, cross-entropy, or the negative log likelihood), and (iii) the default activation function of “logistic”. Please plot the perceptron model obtained using the training data. Please compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy using the testing data.
+
+
+```{r}
+set.seed(123)
+model = neuralnet(y~., data = train.data, hidden = 0, err.fct = "ce", linear.output = F)
+plot(model, rep = "best")
+
+probabilities = predict(model, test.data)
+predicted.classes = ifelse(probabilities > 0.5, 1, 0)
+
+confusionMatrix(factor(predicted.classes), factor(test.data$y), positive = "1")
+```
+
+# 2b. Sensitivity = 0.7609649
+```{r}
+347/(347+109)
+```
+
+# 2b. Specificity = 0.9481268
+```{r}
+658/(658+36)
+```
+
+# 2b. Accuracy = 0.873913
+```{r}
+(347+658)/(347+658+109+36)
+```
+
+# **Part c**	Now we shall build the best classifier to predict the class label using the training data and the Logistic Regression model. Please report the fitted logistic regression model obtained using the training data – and compare to the Perceptron models obtained in the plots of Question 2 (a) and Question 2 (b). Which Perceptron model better resembles the logistic regression model, and why? Please compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy using the testing data.
+
+```{r}
+set.seed(123)
+model = glm(y~., family = binomial, data = train.data)
+
+summary(model)
+
+probabilities = model %>% predict(test.data, type = "response")
+predicted.classes = ifelse(probabilities > 0.5, 1, 0)
+
+confusionMatrix(factor(predicted.classes), factor(test.data$y), positive = "1")
+```
+
+# The perceptron model in part 2b is similar to this model, they have the same confusion matrix and very similar coefficients for the variables.
+
+# 2c. Sensitivity = 0.7609649
+```{r}
+347/(347+109)
+```
+
+# 2c. Specificity = 0.9481268
+```{r}
+658/(658+36)
+```
+
+# 2c. Accuracy = 0.873913
+```{r}
+(347+658)/(347+658+109+36)
+```
+
+# **Part d**	Now we shall build the best classifier to predict passenger survival using the training data and the Perceptron model with (i) one hidden layer with 3 neurons, (ii) the default loss function of “sse”, and (iii) the default activation function of “logistic”. Please compute the Confusion matrix and report the sensitivity (that is, a passenger who survived is predicted to have survived), specificity (that is, a passenger who did not survive is predicted to not have survived), and the overall accuracy using the testing data. Please compare the performance in test data to that of Question 2 (a).
+
+```{r}
+set.seed(123)
+model = neuralnet(y~., data = train.data, hidden = 3, err.fct = "sse", linear.output = F)
+plot(model, rep = "best")
+
+probabilities = predict(model, test.data)
+predicted.classes = ifelse(probabilities > 0.5, 1, 0)
+
+confusionMatrix(factor(predicted.classes), factor(test.data$y), positive = "1")
+
+bestnnpred<-predicted.classes
+```
+
+
+# 2d. Sensitivity = 0.8574561
+```{r}
+391/(391+65)
+```
+
+# 2d. Specificity = 0.9394813
+```{r}
+652/(652+42)
+```
+
+# 2d. Accuracy = 0.9069565
+```{r}
+(391+652)/(391+652+65+42)
+```
+
+
+
+# The SSE model with 3 hidden layer nodes has a higher sensitivity, specificity, and overall accuracy on new data than the model in part a, making the model in part d better in every way, except the effects of the variables is harder to understand on the outcome due to the hidden layer.
+
+
+# **Part e**	Next we shall build the best classifier to predict the class label using the training data and the Perceptron model with (i) one hidden layer with 3 neurons, (ii) the loss function of “ce” (namely, cross-entropy, or the negative log likelihood), and (iii) the default activation function of “logistic”. Please plot the perceptron model obtained using the training data. Please compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy using the testing data. Please compare the performance in test data to that of Question 2 (b).
+
+```{r}
+set.seed(123)
+model = neuralnet(y~., data = train.data, hidden = 3, err.fct = "ce", linear.output = F)
+plot(model, rep = "best")
+
+probabilities = predict(model, test.data)
+predicted.classes = ifelse(probabilities > 0.5, 1, 0)
+
+confusionMatrix(factor(predicted.classes), factor(test.data$y), positive = "1")
+```
+
+# 2e. Sensitivity = 0.8442982
+```{r}
+385/(385+71)
+```
+
+# 2e. Specificity = 0.943804
+```{r}
+655/(655+39)
+```
+
+# 2e. Accuracy = 0.9043478
+```{r}
+(385+655)/(385+655+39+71)
+```
+
+# The CE model with 3 hidden layer nodes has a much higher sensitivity, and overall accuracy on new data than the model in part b while the CE model with no hidden layer has a slightly better Specificity, making the model in part e better.
+
+
+# **Part f**	Which neural network model provides the best overall accuracy among (a), (b), (d), (e)? For this best model only, please add the predicted label for every test data point. (Please do not print this data set out! It will be used in Question 6 below.)
+
+# The model in part d is the most accurate with accuracy rate of 0.9069565
+
+```{r}
+bests<-data.frame("y"=test.data$y)
+bests$NN<-bestnnpred
+```
+
+
+# **Question 3**
+
+# 3.	Now we shall use the randomforest function in R to build the random forest classifiers. For this question, we shall NOT perform data standardization (normalization). 
+
+# **Part a**	Please first build the best random forest to predict the class label using the training data. Please compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy using the out of bag (OOB) samples
+```{r}
+train.data$y <- as.factor(train.data$y)
+test.data$y <- as.factor(test.data$y)
+set.seed(123)
+model <- train(
+  y ~., data = train.data, method = "rf",
+  trControl = trainControl("cv", number = 10),
+  importance = TRUE
+  )
+# Best tuning parameter
+model$bestTune
+model$finalModel
+```
+# Sensitivity (predicted == 1|y == 1)
+```{r}
+1163/(1163+194)
+```
+# Specificity (predicted == 0|y == 0)
+```{r}
+1993/(1993+101)
+```
+# Accuracy
+```{r}
+(1993+1163)/(1993+101+1163+194)
+```
+
+# **Part b**	Next please use this random forest to predict the class label in the testing data. Please add the predicted label for every test data point. (Please do not print this data set out! It will be used in Question 6 below.) Please compute the Confusion matrix and report the sensitivity, specificity and the overall accuracy for the testing data
+
+```{r}
+predRF <- model %>% predict(test.data)
+table(test.data$y,predRF)
+
+bests$RF<-predRF
+```
+
+# **Part c**	Please plot the variables importance measures using 
+
+# I.	MeanDecreaseAccuracy, which is the average decrease of model accuracy in predicting the outcome of the out-of-bag samples when a specific variable is excluded from the model.
+# II.	MeanDecreaseGini, which is the average decrease in node impurity that results from splits over that variable. The Gini impurity index is only used for classification problem.
+
+```{r}
+#c)
+# Plot MeanDecreaseAccuracy
+varImpPlot(model$finalModel, type = 1)
+# Plot MeanDecreaseGini
+varImpPlot(model$finalModel, type = 2)
+```
+
+# **Part d**	Please show the importance of each variable in percentage based on MeanDecreaseAccuracy. 
+
+```{r}
+#d)
+varImp(model)
+```
+
+# **Question 4**
+
+# 4.	For this question, we shall use rpart to build the classification tree and rattle to plot the tree. For this question, we shall NOT perform data standardization (normalization).
+
+# **Part a**	Please first build a fully grown tree using the training data, and draw the tree plot using rattle. Next please use this tree to predict class label in the testing data. Please compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy for the testing data.
+
+```{r}
+model <- rpart(y ~., data = train.data, control = rpart.control(cp=0))
+par(xpd = NA)
+fancyRpartPlot(model)
+pred <- predict(model,newdata = test.data, type ='class')
+table(test.data$y,pred)
+```
+
+# 4a. Sensitivity
+```{r}
+367/(367+89)
+```
+
+# 4a. Specificity
+```{r}
+648/(648+46)
+```
+
+# 4a. Accuracy
+```{r}
+(648+367)/(648+46+367+89)
+```
+
+# **Part b**	To make the tree more robust, we shall prune the fully grown tree using the training data with 10-fold cross-validation. Please (1) show the complexity plot, (2) report the best CP value, and (3) draw the pruned tree using rattle.
+```{r}
+set.seed(123)
+model2 <- train(
+  y ~., data = train.data, method = "rpart",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 100)
+model2
+plot(model2)
+
+model2$bestTune
+fancyRpartPlot(model2$finalModel)
+```
+
+# **Part c**	Please use this optimal pruned tree to predict the class label in the testing data. Please compute the Confusion matrix and report the sensitivity, specificity and the overall accuracy for the testing data.
+```{r}
+pred <- predict(model2, newdata = test.data)
+table(test.data$y,pred)
+```
+
+# 4c. Sensitivity
+```{r}
+366/(366+90)
+```
+
+# 4c. Specificity
+```{r}
+650/(650+44)
+```
+
+# 4c. Accuracy
+```{r}
+(650+366)/(650+44+366+90)
+```
+
+# **Question 5**
+
+#5.	Now we shall use the caret package in R to build the various SVM classifiers. For this question, we shall NOT perform data standardization (normalization). 
+
+# **Part a**	Please first build the best classifier to predict class label using the training data and the linear SVM. We shall use the default value for the cost parameter C. Please compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy using the testing data
+
+```{r}
+# Fit the model on the training set
+set.seed(123)
+model <- train(
+  y ~., data = train.data, method = "svmLinear",
+  trControl = trainControl("cv", number = 10)
+  )
+
+# Make predictions on the test data
+predicted.classes <- model %>% predict(test.data)
+head(predicted.classes)
+
+# Confusion matrix
+table(test.data$y, predicted.classes)
+
+# Sensitivity (predicted == 1|Survived == 1)
+349/(349+107)
+
+# Specificity (predicted == 0|Survived == 0)
+660/(660+34)
+
+# Compute model accuracy rate
+mean(predicted.classes == test.data$y)
+#  0.8773913
+```
+
+# **Part b**	Next we will build the best classifier to predict class label using the training data and the linear SVM. We shall find the optimal cost parameter C by using the command line:
+# tuneGrid = expand.grid(C = seq(.1, 2, length = 19))
+# Please (i) report the optimal cost parameter value, and (ii) compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy using the testing data.
+
+```{r}
+# Fit the model on the training set
+set.seed(123)
+model <- train(
+  y ~., data = train.data, method = "svmLinear",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(C = seq(.1, 2, length = 19)),
+  )
+
+# Plot model accuracy vs different values of Cost
+plot(model)
+
+# Print the best tuning parameter C that
+# maximizes model accuracy
+model$bestTune
+
+# Make predictions on the test data
+predicted.classes <- model %>% predict(test.data)
+
+# Confusion matrix
+table(test.data$y, predicted.classes)
+
+# Sensitivity (predicted == 1|Survived == 1)
+349/(349+107)
+
+# Specificity (predicted == 0|Survived == 0)
+661/(661+33)
+
+# Compute model accuracy rate
+mean(predicted.classes == test.data$y)
+# 0.8782609
+```
+
+# **Part c**	Now we shall build the best classifier to predict class label using the training data and the SVM with radial basis kernel. We shall find the optimal tuning parameters C and sigma (σ) by using the command line:
+# tuneLength = 10
+# Please (i) report the optimal parameter values, and (ii) compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy using the testing data.
+```{r}
+# Fit the model on the training set
+set.seed(123)
+model <- train(
+  y ~., data = train.data, method = "svmRadial",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale"),
+  tuneLength = 10
+  )
+# Print the best tuning parameter sigma and C that
+# maximizes model accuracy
+model$bestTune
+
+# Make predictions on the test data
+predicted.classes <- model %>% predict(test.data)
+
+# Confusion matrix
+table(test.data$y, predicted.classes)
+
+# Sensitivity (predicted == 1|Survived == 1)
+371/(371+85)
+
+# Specificity (predicted == 0|Survived == 0)
+653/(653+41)
+
+# Compute model accuracy rate
+mean(predicted.classes == test.data$y)
+# 0.8904348
+
+bestSVMpred<-predicted.classes
+
+bests$SVM<-bestSVMpred
+```
+
+# **Question 6**
+
+# 6.	Now, we shall build an ensemble classifier using the majority vote of: (1) the random forest, (2) the best neural network model, and (3) the best SVM models obtained above. The way the majority vote works is that each case in the testing data is classified into the label with the majority vote from the three classifiers. For example, if a case is predicted to be 1, 1, 0 – then the case is classified as 1. Now, please compare the majority vote to the true class label (y) --- compute the Confusion matrix and report the sensitivity, specificity, and the overall accuracy of our new ensemble classifier using the testing data
+
+```{r}
+bests$RF<-as.numeric(bests$RF)-1
+bests$SVM<-as.numeric(bests$SVM)-1
+
+bests$Sum<-bests$NN+bests$RF+bests$SVM
+
+bests$pred<-1
+for(i in seq(1,length(bests$y))){
+  if(bests$Sum[i] < 2){
+    bests$pred[i]<-0
+  }
+}
+
+table(bests$y,bests$Sum > 1)
+```
+
+# 6. Sensitivity
+```{r}
+384/(384+72)
+```
+
+# 6. Specificity
+```{r}
+661/(661+33)
+```
+
+# 6. Accuracy
+```{r}
+(661+384)/(661+33+72+384)
+```
