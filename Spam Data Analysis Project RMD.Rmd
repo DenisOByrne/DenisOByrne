@@ -1,0 +1,879 @@
+---
+title: "Spam Email Project"
+author: "Denis O'Byrne"
+date: "9/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## If file wont run, uncomment the following lines
+
+```{r}
+#install.packages("caTools")
+#install.packages("tidyverse")
+#install.packages("caret")
+#install.packages("randomForest")
+#install.packages("ROCR")
+#install.packages("ineq")
+#install.packages("data.table")
+#install.packages("glmnet")
+#install.packages("ROSE")
+```
+
+```{r}
+library(caTools)
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(ROCR)
+library(ineq)
+library(data.table)
+
+
+spam<-read.csv("C:/Users/denis/Downloads/spambase.data", header= FALSE)
+spam<-na.omit(spam)
+set.seed(123)
+
+split = sample.split(spam$V58, SplitRatio = 0.75)
+
+Train <-subset(spam, split == TRUE)
+
+Test<- subset(spam, split == FALSE)
+
+nrow(Train)
+nrow(Test)
+
+
+#####	Random Forest Analysis
+#####	Random Forest Analysis
+#####	Random Forest Analysis
+#####	Random Forest Analysis
+#####	Random Forest Analysis
+#####	Random Forest Analysis
+#####	Random Forest Analysis
+
+set.seed(123)
+
+TrainForest<-randomForest(x=Train[1:57],y=as.factor(Train$V58), mtry = 8, nodesize = 10, ntree = 501, data = Train, importance=TRUE)
+
+pred<-TrainForest$predicted
+table(Train$V58, pred)
+
+
+TestPred = predict(TrainForest, newdata=Test)
+table(Test$V58,TestPred)
+
+
+varImpPlot(TrainForest, type = 1)
+
+# Plot MeanDecreaseGini
+
+varImpPlot(TrainForest, type = 2)
+
+varImp(TrainForest)
+
+plot(TrainForest, main="")
+
+legend("topright", c("OOB", "0", "1"), text.col=1:6, lty=1:3, col=1:3) 
+
+title(main="Error Rates Random Forest Spam Check Training data")
+
+tuneTrainForest<- tuneRF(x = Train[1:57],
+
+             y=as.factor(Train$V58),
+
+             mtryStart = 7, #Aprox, Sqrt of Total no. of variables
+
+             ntreeTry = 200,
+
+             stepFactor = 2,
+
+             improve = 0.0001,
+
+             trace = TRUE,
+
+             plot = TRUE,
+
+             doBest = TRUE,
+
+             nodesize = 10,
+
+             importance = TRUE
+
+)
+
+Train$predict.class <- predict(tuneTrainForest, Train, type = "class")
+
+Train$predict.score <- predict(tuneTrainForest, Train, type = "prob")
+ 
+
+sum(Train$V58) / nrow(Train)
+
+
+library(ROCR) 
+
+predRFTrain <- prediction(Train$predict.score[,2], Train$V58) 
+
+perfRFTrain <- performance(predRFTrain, "tpr", "fpr") 
+
+plot(perfRFTrain) 
+
+KSRFTrain <- max(attr(perfRFTrain, 'y.values')[[1]]-attr(perfRFTrain, 'x.values')[[1]]) 
+
+KSRFTrain 
+
+aucRFTrain <- performance(predRFTrain,"auc");
+
+aucRFTrain <- as.numeric(aucRFTrain@y.values) 
+
+aucRFTrain
+
+library(ineq) 
+
+giniRFTrain = 2*aucRFTrain-1
+
+giniRFTrain
+
+with(Train, table(V58, predict.class))
+
+Test$predict.class <- predict(tuneTrainForest, Test, type="class") 
+
+Test$predict.score <- predict(tuneTrainForest, Test, type="prob") 
+
+predRFTest <- prediction(Test$predict.score[,2], Test$V58) 
+
+perfRFTest <- performance(predRFTest, "tpr", "fpr") 
+
+plot(perfRFTest) 
+
+KSRFTest <- max(attr(perfRFTest, 'y.values')[[1]]-attr(perfRFTest, 'x.values')[[1]]) 
+
+KSRFTest 
+
+aucRFTest <- performance(predRFTest,"auc"); 
+
+aucRFTest <- as.numeric(aucRFTest@y.values) 
+
+aucRFTest 
+
+giniRFTest = 2*aucRFTest-1
+
+giniRFTest
+
+with(Train, table(V58, predict.class))
+
+with(Test, table(V58, predict.class))
+
+
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+#####	Neural Network Analysis
+
+
+
+
+set.seed(123)
+
+split = sample.split(spam$V58, SplitRatio = 0.75)
+
+Train <-subset(spam, split == TRUE)
+
+Test<- subset(spam, split == FALSE)
+
+library(neuralnet)
+
+xTrain<-Train
+xTrain$V58<-NULL
+nnTrainScaled <- scale(xTrain) 
+nnTrainScaled <- cbind(Train[58], nnTrainScaled)
+
+nNetTrain <- neuralnet(formula = V58 ~V1 + V2 + V3 + V4 + V5 + V6 + V7 + V8 + V9
+ + V10 + V11 + V12 + V13 + V14 + V15 + V16 + V17 + V18 + V19
+ + V20 + V21 + V22 + V23 + V24 + V25 + V26 + V27 + V28 + V29
+ + V30 + V31 + V32 + V33 + V34 + V35 + V36 + V37 + V38 + V39
+ + V40 + V41 + V42 + V43 + V44 + V45 + V46 + V47 + V48 + V49
+ + V50 + V51 + V52 + V53 + V54 + V55 + V56 + V57,
+ data = nnTrainScaled,
+ hidden = 3,
+ err.fct = "sse",
+ linear.output = FALSE,
+ lifesign = "full", 
+ lifesign.step = 10, 
+ threshold = 0.1, 
+ stepmax = 2000)
+
+plot (nNetTrain)
+
+Train$Prob = nNetTrain$net.result[[1]]
+
+quantile(Train$Prob, c(0,1,5,10,25,50,75,90,95,98,99,100)/100)
+
+hist(Train$Prob) 
+
+
+
+Train$Class = ifelse(Train$Prob>0.5,1,0) 
+
+with( Train, table(V58, as.factor(Class) ))
+
+sum((Train$V58 - Train$Prob)^2)/2
+
+detach(package:neuralnet)
+
+predNnTrain <- prediction(Train$Prob, Train$V58)
+
+perfNnTrain <- performance(predNnTrain, "tpr", "fpr") 
+
+plot(perfNnTrain) 
+
+KSNnTrain <- max(attr(perfNnTrain, 'y.values')[[1]]-attr(perfNnTrain, 'x.values')[[1]]) 
+
+KSNnTrain
+
+aucNnTrain <- performance(predNnTrain,"auc"); 
+
+aucNnTrain<- as.numeric(aucNnTrain@y.values) 
+
+aucNnTrain
+
+
+giniNnTrain = 2*aucNnTrain-1
+
+giniNnTrain 
+
+library(neuralnet)
+
+xTest<-Test
+xTest$V58<-NULL
+nnTestScaled <- scale(xTest) 
+
+compute.output <- compute(nNetTrain, nnTestScaled)
+
+Test$Predict.score <- compute.output$net.result
+
+quantile(Test$Predict.score, c(0,1,5,10,25,50,75,90,95,98,99,100)/100)
+
+hist(Test$Predict.score)
+
+
+Test$Prob = compute.output$net.result
+Test$Class = ifelse(Test$Prob>0.5,1,0) 
+
+with( Test, table(V58, as.factor(Class) ))
+
+sum((Test$V58 - Test$Prob)^2)/2
+
+detach(package:neuralnet)
+
+predNnTest <- prediction(Test$Prob, Test$V58) 
+
+perfNnTest <- performance(predNnTest, "tpr", "fpr") 
+
+plot(perfNnTest)
+
+KSNnTest <- max(attr(perfNnTest, 'y.values')[[1]]-attr(perfNnTest, 'x.values')[[1]]) 
+
+KSNnTest 
+
+aucNnTest <- performance(predNnTest,"auc"); 
+
+aucNnTest <- as.numeric(aucNnTest@y.values) 
+
+aucNnTest 
+
+giniNnTest = 2*aucNnTest-1
+
+giniNnTest
+
+with( Train, table(V58, as.factor(Class) ))
+
+with( Test, table(V58, as.factor(Class) ))
+
+
+
+#####	CART Analysis
+#####	CART Analysis
+#####	CART Analysis
+#####	CART Analysis
+#####	CART Analysis
+#####	CART Analysis
+#####	CART Analysis
+#####	CART Analysis
+#####	CART Analysis
+#####	CART Analysis
+
+library(rpart)
+library(rattle) 
+library(RColorBrewer) 
+
+set.seed(123)
+
+split = sample.split(spam$V58, SplitRatio = 0.75)
+
+Train <-subset(spam, split == TRUE)
+
+Test<- subset(spam, split == FALSE)
+
+r.ctrl <- rpart.control(minsplit = 100, minbucket = 10, cp = 0, xval = 10)
+
+CartModel <- rpart(formula = V58~., data = Train, method = "class", control = r.ctrl)
+
+
+
+fancyRpartPlot(CartModel)
+
+printcp(CartModel)
+
+plotcp(CartModel)
+
+ptree<- prune(CartModel, cp= 0.0025 ,"CP") 
+
+printcp(ptree) 
+
+fancyRpartPlot(ptree, 
+
+               uniform = TRUE, 
+
+               main = "Final Tree", 
+
+               palettes = c("Blues", "Oranges")
+
+               )
+
+
+Train$predict.class = predict(ptree, Train, type = "class")
+
+Train$predict.score = predict(ptree, Train, type = "prob")
+
+predCartTrain <- prediction(Train$predict.score[,2], Train$V58) 
+
+perfCartTrain <- performance(predCartTrain, "tpr", "fpr") 
+
+
+
+KSCartTrain <- max(attr(perfCartTrain, 'y.values')[[1]]-attr(perfCartTrain, 'x.values')[[1]]) 
+
+
+
+aucCartTrain <- performance(predCartTrain,"auc"); 
+
+aucCartTrain <- as.numeric(aucCartTrain@y.values) 
+
+
+
+giniCartTrain = 2*aucCartTrain-1 
+
+with(Train, table(V58, predict.class))
+
+plot(perfCartTrain)
+
+KSCartTrain
+
+aucCartTrain
+
+giniCartTrain
+
+Test$predict.class = predict(ptree, Test, type = "class")
+
+Test$predict.score = predict(ptree, Test, type = "prob")
+
+predCartTest <- prediction(Test$predict.score[,2], Test$V58) 
+
+perfCartTest <- performance(predCartTest, "tpr", "fpr") 
+
+
+
+KSCartTest <- max(attr(perfCartTest, 'y.values')[[1]]-attr(perfCartTest, 'x.values')[[1]]) 
+
+
+
+aucCartTest <- performance(predCartTest,"auc"); 
+
+aucCartTest <- as.numeric(aucCartTest@y.values) 
+
+
+
+giniCartTest = 2*aucCartTest-1
+
+with(Test, table(V58, predict.class)) 
+
+plot(perfCartTest)
+
+KSCartTest
+
+aucCartTest
+
+giniCartTest
+
+table(Train$V58,Train$predict.class)
+
+table(Test$V58,Test$predict.class)
+
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+#####	Balanced CART Analysis
+
+
+
+library(ROSE)
+
+
+set.seed(123)
+
+split = sample.split(spam$V58, SplitRatio = 0.75)
+
+Train <-subset(spam, split == TRUE)
+
+Test<- subset(spam, split == FALSE)
+
+table(Train$V58)
+
+TrainOver <- ovun.sample(V58~.,data=Train, 
+
+                               method="over",N=2*2091)$data 
+
+table(TrainOver$V58)
+
+r.ctrl = rpart.control(minsplit=100, minbucket = 20, cp = 0, xval = 10)
+
+BalancedCartModel <- rpart(formula = V58 ~ ., data = TrainOver, method = "class", control = r.ctrl)
+
+fancyRpartPlot(BalancedCartModel)
+
+
+printcp(BalancedCartModel)
+
+plotcp(BalancedCartModel)
+
+Balancedptree<- prune(BalancedCartModel, cp= 0.0039 ,"CP") 
+
+printcp(Balancedptree) 
+
+fancyRpartPlot(Balancedptree, uniform = TRUE, main = "Final Balanced Tree", palettes = c("Blues", "Oranges"))
+
+TrainOver$predict.class <- predict(Balancedptree, TrainOver, type = "class")
+
+TrainOver$predict.score <- predict(Balancedptree, TrainOver, type = "prob")
+
+predBalancedTrain <- prediction(TrainOver$predict.score[,2], TrainOver$V58) 
+
+perfBalancedTrain <- performance(predBalancedTrain, "tpr", "fpr") 
+
+
+
+KSBalancedTrain <- max(attr(perfBalancedTrain, 'y.values')[[1]]-attr(perfBalancedTrain, 'x.values')[[1]]) 
+
+
+
+aucBalancedTrain <- performance(predBalancedTrain,"auc"); 
+
+aucBalancedTrain <- as.numeric(aucBalancedTrain@y.values) 
+
+
+
+giniBalancedTrain = 2*aucBalancedTrain-1 
+
+with(TrainOver, table(V58, predict.class))
+
+plot(perfBalancedTrain)
+
+KSBalancedTrain
+
+aucBalancedTrain
+
+giniBalancedTrain
+
+
+Test$predict.class <- predict(Balancedptree, Test, type = "class")
+
+Test$predict.score <- predict(Balancedptree, Test, type = "prob")
+
+predBalancedTest <- prediction(Test$predict.score[,2], Test$V58) 
+
+perfBalancedTest <- performance(predBalancedTest, "tpr", "fpr") 
+
+
+
+KSBalancedTest <- max(attr(perfBalancedTest, 'y.values')[[1]]-attr(perfBalancedTest, 'x.values')[[1]]) 
+
+
+
+aucBalancedTest <- performance(predBalancedTest,"auc"); 
+
+aucBalancedTest <- as.numeric(aucBalancedTest@y.values) 
+
+
+
+giniBalancedTest = 2*aucBalancedTest-1
+with(Test, table(V58, predict.class))
+
+plot(perfBalancedTest)
+
+KSBalancedTest
+
+aucBalancedTest
+
+giniBalancedTest
+
+
+with(TrainOver, table(V58, predict.class))
+
+with(Test, table(V58, predict.class))
+
+
+#####Ridge Regression
+#####Ridge Regression
+#####Ridge Regression
+#####Ridge Regression
+#####Ridge Regression
+#####Ridge Regression
+#####Ridge Regression
+#####Ridge Regression
+#####Ridge Regression
+#####Ridge Regression
+
+
+library(tidyverse)
+
+library(caret)
+
+library(glmnet)
+
+set.seed(123)
+
+split = sample.split(spam$V58, SplitRatio = 0.75)
+
+Train <-subset(spam, split == TRUE)
+
+Test<- subset(spam, split == FALSE)
+
+x <- model.matrix(V58~., Train)[,-1]
+
+# Outcome variable
+
+y <- Train$V58
+
+set.seed(123) 
+
+cv <- cv.glmnet(x, y, family = "binomial", alpha = 0)
+
+# Display the best lambda value
+
+cv$lambda.min
+
+model <- glmnet(x, y, alpha = 0, lambda = cv$lambda.min)
+
+# Display regression coefficients
+
+coef(model)
+
+x.train <- model.matrix(V58 ~., Train)[,-1]
+
+predictionsRidgeTrain <- model %>% predict(x.train) %>% as.vector()
+
+
+Train$predict.class <- ifelse(predictionsRidgeTrain>0.5,1,0)
+
+Train$predict.score <- predictionsRidgeTrain
+
+predRidgeTrain <- prediction(Train$predict.score, Train$V58) 
+
+perfRidgeTrain <- performance(predRidgeTrain, "tpr", "fpr")
+
+plot(perfRidgeTrain) 
+
+KSRidgeTrain <- max(attr(perfRidgeTrain, 'y.values')[[1]]-attr(perfRidgeTrain, 'x.values')[[1]]) 
+
+KSRidgeTrain
+
+aucRidgeTrain <- performance(predRidgeTrain,"auc");
+
+aucRidgeTrain <- as.numeric(aucRidgeTrain@y.values) 
+
+aucRidgeTrain  
+
+giniRidgeTrain = 2*aucRidgeTrain-1
+giniRidgeTrain
+
+x.test <- model.matrix(V58 ~., Test)[,-1]
+
+predictionsRidgeTest <- model %>% predict(x.test) %>% as.vector()
+
+Test$predict.class <- ifelse(predictionsRidgeTest>0.5,1,0)
+
+Test$predict.score <- predictionsRidgeTest
+
+predRidgeTest <- prediction(Test$predict.score, Test$V58) 
+
+perfRidgeTest <- performance(predRidgeTest, "tpr", "fpr")
+
+plot(perfRidgeTest) 
+
+KSRidgeTest <- max(attr(perfRidgeTest, 'y.values')[[1]]-attr(perfRidgeTest, 'x.values')[[1]]) 
+
+KSRidgeTest
+
+aucRidgeTest <- performance(predRidgeTest,"auc");
+
+aucRidgeTest <- as.numeric(aucRidgeTest@y.values) 
+
+aucRidgeTest 
+
+giniRidgeTest = 2*aucRidgeTest-1
+giniRidgeTest 
+
+
+with(Train, table(V58, predict.class))
+
+with(Test, table(V58, predict.class))
+
+#####Lasso Regression
+#####Lasso Regression
+#####Lasso Regression
+#####Lasso Regression
+#####Lasso Regression
+#####Lasso Regression
+#####Lasso Regression
+#####Lasso Regression
+#####Lasso Regression
+#####Lasso Regression
+
+
+library(tidyverse)
+
+library(caret)
+
+library(glmnet)
+
+set.seed(123)
+
+split = sample.split(spam$V58, SplitRatio = 0.75)
+
+Train <-subset(spam, split == TRUE)
+
+Test<- subset(spam, split == FALSE)
+
+x <- model.matrix(V58~., Train)[,-1]
+
+# Outcome variable
+
+y <- Train$V58
+
+set.seed(123) 
+
+cv <- cv.glmnet(x, y, family = "binomial", alpha = 0)
+
+# Display the best lambda value
+
+cv$lambda.min
+
+modelLasso <- glmnet(x, y, alpha = 1, lambda = cv$lambda.min)
+
+# Display regression coefficients
+
+coef(modelLasso)
+
+x.train <- model.matrix(V58 ~., Train)[,-1]
+
+predictionsLassoTrain <- modelLasso %>% predict(x.train) %>% as.vector()
+
+
+Train$predict.class <- ifelse(predictionsLassoTrain>0.5,1,0)
+
+Train$predict.score <- predictionsLassoTrain
+
+predLassoTrain <- prediction(Train$predict.score, Train$V58) 
+
+perfLassoTrain <- performance(predLassoTrain, "tpr", "fpr")
+
+plot(perfLassoTrain) 
+
+KSLassoTrain <- max(attr(perfLassoTrain, 'y.values')[[1]]-attr(perfLassoTrain, 'x.values')[[1]]) 
+
+KSLassoTrain
+
+aucLassoTrain <- performance(predLassoTrain,"auc");
+
+aucLassoTrain <- as.numeric(aucLassoTrain@y.values) 
+
+aucLassoTrain 
+
+library(ineq) 
+
+giniLassoTrain = 2*aucLassoTrain -1 
+
+giniLassoTrain
+
+x.test <- model.matrix(V58 ~., Test)[,-1]
+
+predictionsLassoTest <- modelLasso %>% predict(x.test) %>% as.vector()
+
+Test$predict.class <- ifelse(predictionsLassoTest>0.5,1,0)
+
+Test$predict.score <- predictionsLassoTest
+
+predLassoTest <- prediction(Test$predict.score, Test$V58) 
+
+perfLassoTest <- performance(predLassoTest, "tpr", "fpr")
+
+plot(perfLassoTest) 
+
+KSLassoTest <- max(attr(perfLassoTest, 'y.values')[[1]]-attr(perfLassoTest, 'x.values')[[1]]) 
+
+KSLassoTest
+
+aucLassoTest <- performance(predLassoTest,"auc");
+
+aucLassoTest <- as.numeric(aucLassoTest@y.values) 
+
+aucLassoTest 
+
+library(ineq) 
+
+giniLassoTest = 2*aucLassoTest-1
+
+giniLassoTest
+
+
+with(Train, table(V58, predict.class))
+
+with(Test, table(V58, predict.class))
+
+
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+######Elastic Net Regression
+
+
+library(tidyverse)
+
+library(caret)
+
+library(glmnet)
+
+set.seed(123)
+
+split = sample.split(spam$V58, SplitRatio = 0.75)
+
+Train <-subset(spam, split == TRUE)
+
+Test<- subset(spam, split == FALSE)
+
+x <- model.matrix(V58~., Train)[,-1]
+
+# Outcome variable
+
+y <- Train$V58
+
+set.seed(123)
+
+modelElastic <- train(
+
+  V58 ~., data = Train, method = "glmnet",
+
+  trControl = trainControl("cv", number = 10),
+
+  tuneLength = 10
+
+)
+
+# Best tuning parameter
+
+model$bestTune
+
+coef(modelElastic$finalModel, modelElastic$bestTune$lambda)
+
+x.train <- model.matrix(V58 ~., Train)[,-1]
+
+predictionsElasticTrain <- modelElastic %>% predict(x.train)
+
+
+Train$predict.class <- ifelse(predictionsElasticTrain>0.5,1,0)
+
+Train$predict.score <- predictionsElasticTrain
+
+predElasticTrain <- prediction(Train$predict.score, Train$V58) 
+
+perfElasticTrain <- performance(predElasticTrain, "tpr", "fpr")
+
+plot(perfElasticTrain) 
+
+KSElasticTrain <- max(attr(perfElasticTrain, 'y.values')[[1]]-attr(perfElasticTrain, 'x.values')[[1]]) 
+
+KSElasticTrain
+
+aucElasticTrain <- performance(predElasticTrain,"auc");
+
+aucElasticTrain <- as.numeric(aucElasticTrain@y.values) 
+
+aucElasticTrain 
+ 
+
+giniElasticTrain = 2*aucElasticTrain-1
+
+giniElasticTrain
+
+x.test <- model.matrix(V58 ~., Test)[,-1]
+
+predictionsElasticTest <- modelElastic %>% predict(x.test) %>% as.vector()
+
+Test$predict.class <- ifelse(predictionsElasticTest>0.5,1,0)
+
+Test$predict.score <- predictionsElasticTest
+
+predElasticTest <- prediction(Test$predict.score, Test$V58) 
+
+perfElasticTest <- performance(predElasticTest, "tpr", "fpr")
+
+plot(perfElasticTest) 
+
+KSElasticTest <- max(attr(perfElasticTest, 'y.values')[[1]]-attr(perfElasticTest, 'x.values')[[1]]) 
+
+KSElasticTest
+
+aucElasticTest <- performance(predElasticTest,"auc");
+
+aucElasticTest <- as.numeric(aucElasticTest@y.values) 
+
+aucElasticTest 
+ 
+
+giniElasticTest = 2*aucElasticTest-1 
+
+giniElasticTest
+
+
+with(Train, table(V58, predict.class))
+
+with(Test, table(V58, predict.class))
+```
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
