@@ -1,4 +1,4 @@
-- 👋 Hi, I’m @DenisOByrne
+- 👋 Hi, I’m @DenisOByrne Im new to GitHub
 - 👀 I’m interested in ... Data Science - Statistics, Machine Learning
 - 🌱 I’m currently learning ...  I dont know
 - 💞️ I’m looking to collaborate on ...  Nothing right now
