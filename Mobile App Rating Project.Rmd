@@ -1,0 +1,1568 @@
+---
+title: "Mobile App Rating Prediction"
+author: "Denis O'Byrne"
+date: "9/18/2021"
+output: html_document
+---
+<style>
+  .superbigimage{
+      overflow-x:scroll;
+      white-space: nowrap;
+      overflow-y:scroll;
+  }
+
+  .superbigimage img{
+     max-width: none;
+  }
+
+
+</style>
+
+
+# Background: This was originally assigned to me as an interview question in a timed test where I was asked to predict the popularity of a mobile app as a binary response (good or bad). I have since found the soure data set and wanted to improve my solution. I do not have my original code so I will have to start from scratch on that end but my thinking will still be along the same lines.
+
+
+## Data set: [Source found here](https://www.kaggle.com/lava18/google-play-store-apps)
+## The data set is the kaggle google play store apps data set linked above  provided by lava18
+
+## To validate my model, I will split the dataset as a 70-30 split as there is no hidden data for this challenge.
+
+## To start we will look at the dataset and split the data.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{css, echo=FALSE}
+pre, code {white-space:pre !important; overflow-x:auto}
+```
+
+```{r}
+options(width=5000)
+
+mobile_data<-read.csv("C:/Users/denis/Desktop/MobileApp Rating/googleplaystore.csv", header = TRUE)
+
+head(mobile_data)
+```
+
+## If it is not obvious by now this data is very chaotic and needs to be properly wrangled before we can think about doing any sort of modeling. Lets first split the data so that in the event this were real data our wrangling would need to be reperformed at the end on our new test data. For this reason I will write the data wrangling methods as a function then apply it to both the test and the training set.
+
+## Also note there are some apps where the rating is missing and listed as NaN. Since I would like to be able to test my answer at the end, I am going to remove these points from my dataset. I will make a prediction on these apps at the end however
+
+```{r}
+mob_data<-subset(mobile_data,is.nan(mobile_data$Rating)==FALSE)
+```
+
+##I will be using methods from libraries 'caret', 'caTools', and 'tidyverse' for the data splitting so installl these packages if you intend to run the code by uncommenting the following 3 lines
+
+```{r}
+#install.packages('caret')
+#install.packages('tidyverse')
+#install.packages('caTools')
+```
+
+```{r}
+library(tidyverse)
+library(caret)
+library(caTools)
+
+set.seed(123)
+sample <- sample.split(mob_data$Rating, SplitRatio = .70)
+training <- subset(mob_data, sample == TRUE)
+testing  <- subset(mob_data, sample == FALSE)
+
+dim(training)
+dim(testing)
+```
+
+## So our training set will contain 6558 samples with 13 rows of variables (12 factors and the response variable Rating) and the testing set will contain 2809 samples.
+
+## Now lets look at some statistics on the training set
+
+```{r}
+summary(training)
+```
+
+# The data storage here actually saves me a step that made me go mad in the interview, as the platform for the exam stored every variable as a factor to start (I dont know why they were not character strings) and converting them from factor to character took a little while to figure out so I will go through 1 variable as if that were the case then treat the rest as they are here
+
+
+# First I will look at the "Size" variable
+
+```{r}
+head(training$Size, 20)
+```
+
+## To use this variable I will need to remove the unit and multiply by the apporopriate power of 10 then convert to numeric
+## As stated before I will include a bit to shw how to deal with this data if it were stored as a factor instead of a character string so I will start by converting to factor
+
+```{r}
+training$Size<-as.factor(training$Size)
+levels(training$Size)
+```
+
+## From intuition we can guess the units we will be looking for, but if one wanted to they could read through all of the factor levels and find that we will have kilobytes (k), megabytes (M), and gigabytes(G). We can also see from the factor list that some data was stored incorrectly with a size of '1000+' I will decide how to deal with these missing values in a moment but for now we will ignore them.There is also a size listed as "varies with device" which we can account for by setting the variables in this case to a negative value to indicate variable size as all other sizes are positive.
+
+## During the exam it took me a while to come up with a solution to this, but I eventually decided to build an array to store the unit power before I removed the unit then multiply the number left behind after converting the list to numeric. I cannot think of a faster solution, this solution currently takes time O(3N) = O(N) since three passes of the list are made. I think there is a way to do it in two passes but it would require spliting the data in each row as a substring which would be slower I believe.
+
+# Anyways here is a method to restructure the data starting from factor form (we just call lapply as.character on each row first the call as.character on the entire column)
+
+```{r}
+#install.packages(stringr)
+```
+
+```{r}
+library(stringr)
+
+training$Size[6375]
+
+training$Size<-lapply(training$Size, as.character)
+training$Size<-as.character(training$Size)
+powers<-c()
+
+for(i in seq(dim(training)[1])){
+  if(substr(training$Size[i],str_length(training$Size[i]),str_length(training$Size[i])) == "k"){
+    powers<-append(powers,1)
+    training$Size[i]<-gsub(".$","",training$Size[i])
+  }else if(substr(training$Size[i],str_length(training$Size[i]),str_length(training$Size[i])) == "M"){
+    powers<-append(powers,1000)
+    training$Size[i]<-gsub(".$","",training$Size[i])
+  }else if(substr(training$Size[i],str_length(training$Size[i]),str_length(training$Size[i])) == "G"){
+    powers<-append(powers,1000000)
+    training$Size[i]<-gsub(".$","",training$Size[i])
+  }else if (training$Size[i] == "Varies with device"){
+    training$Size[i]<- (-1)
+    powers<-append(powers,1)
+  }else{
+    powers<-append(powers,1)
+    training$Size[i]<-gsub(".$","",training$Size[i])
+  }
+  training$Size[i]<-gsub(",","",training$Size[i])
+}
+
+training$Size<-as.numeric(training$Size)
+
+for(i in seq(dim(training)[1])){
+  training$Size[i]<-training$Size[i]*powers[i]
+}
+head(training$Size)
+
+which(is.na(training$Size))
+```
+
+## Now the size variable is properly stored as a continuous variable with a signifier for the case of variable size. Also considering only 1 veriable was stored as 1000+, I will leave it as 1000, this should not affect results
+
+## Next up I will be cleaning the installs variable as it is very similarly bothersome with the trailing + symbol on the values and unnecesary commas. We can use gsub to remove these as seen above.
+
+```{r}
+training[6375,]
+
+training$Installs<-gsub(',', '', training$Installs)
+training$Installs<-gsub('\\+', '', training$Installs)
+head(training$Installs)
+
+training$Installs<-as.numeric(training$Installs)
+summary(training$Installs)
+
+which(is.na(training$Installs))
+```
+
+## Something is specifically wrong with training sample 6375 and this was also the case for the Size variable as well as its size was listed as 1000+ which should have been its Installs, if we inspect further we will find that row 6375 is actually missing a category variable and shifted over all the other data to the wrong column by mistake. To correct this I will fix this row later on when I build the function to do all the data cleaning at once.
+
+## Next lets look at the Type and Price column, we can note that these are somewhat repetitive as the Type column just indicates if the Price is zero, so we can remove it if needed
+
+## Looking at the Price column though we need to remove any dollar signs and commas before converting to numeric.
+
+```{r}
+training$Type<-as.factor(training$Type)
+
+training$Price<-gsub(',', '', training$Price)
+training$Price<-gsub('\\$', '', training$Price)
+training$Price<-as.numeric(training$Price)
+summary(training$Price)
+```
+
+## Only 1 Na which is pesky number 6375 which we saw earlier had a Price of "Everyone", which should be its Content.Rating
+
+## Now I will convert the Reviews and Ratings variables into numerics
+
+```{r}
+training$Rating<-as.numeric(training$Rating)
+training$Reviews<-as.numeric(training$Reviews)
+```
+
+
+## Now we will look at the Content.Rating variable and note that these are category ratings, ao they should be treated as factors
+
+```{r}
+training$Content.Rating<-as.factor(training$Content.Rating)
+summary(training$Content.Rating)
+```
+
+## Next up  will be the Genres and Category variables. If we look at the data though we find that the Genres variable is actually just the Category variable with some new subcategories if the original category is large enought to warrant a split. We can probably ignore one of these two columns if we want but we should order them as factors which ever one we chose to keep
+
+```{r}
+training$Category<-as.factor(training$Category)
+
+training$Genres<-as.factor(training$Genres)
+```
+
+## Now we turn our attention to the Last.Updated Category and find that we have dates of the last update for the app. My solution to dealing with this category is to convert these dates into values counting the number of days that have passed since the date of the last update, so we can store this information as an integer in a new column I will call Days
+
+## First we will need to get these dates into a format that will be usable by a date difference function
+## Examining the dates we will see they are listed in (unabriviated month day, year) form which is found using the format "%B %d, %y"
+
+```{r}
+training$Last.Updated<- as.Date(training$Last.Updated, format = "%B %d, %y")
+today<-Sys.Date()
+training$Days<-0
+for(i in seq(dim(training)[1])){
+  training$Days[i] <- as.integer(today - training$Last.Updated[i])
+}
+head(training$Last.Updated)
+
+summary(training$Days)
+```
+
+## Now we turn to the Current.Ver variable which I was unable to figure out a good way to deal with in the alloted time for the Exam. I wanted to extract the numbers for the major release verion (first number before any decimal point) and the major patch to the release (number after first decimal point but before second decimal point)
+## Since the exact way versions are stored is so chaotic using the given versions as factors will not be meaningful so something must be done to convert these into a continuous numeric variable.
+## I also think it is a good idea to lump weird nonstandard versions into a category as these signify an app made by an independent publisher, as any major software studio will have standardized versioning protocols to adhear to, so I will transform these to a negative value, -1
+## There is also a value 'varies with device' which I will handle by storing the variable as 0
+
+## I found online a useful solution to this problem on Stack Exchange [linked here](https://stackoverflow.com/questions/67113765/how-to-extract-version-number-from-string-in-r)
+
+
+```{r}
+for(i in seq(dim(training)[1])){
+  s<-training$Current.Ver[i]
+  if(s=='Varies with device'){
+    s<-'0'
+  }
+  else{
+    s<-regmatches(mobile_data$Current.Ver[i], regexpr("[0-9]+(\\.[0-9]+)?", mobile_data$Current.Ver[i]))
+  }
+  
+  if(identical(s, character(0))){
+    s<-'-1'
+  }
+  training$Current.Ver[i]<-s
+}
+training$Current.Ver<-as.numeric(training$Current.Ver)
+summary(training$Current.Ver)
+```
+
+## My code is working but there is still an issue with some versions that store the version as the date, I think I will lave this as is for now because my model may be able to spot the similarity of these types anyway.
+
+## Lastly we need to extract the version number from the Android.Ver variable which I can actually do in the exact same way
+
+```{r}
+for(i in seq(dim(training)[1])){
+  s<-training$Android.Ver[i]
+  if(s=='Varies with device'){
+    s<-'0'
+  }
+  else{
+    s<-regmatches(mobile_data$Android.Ver[i], regexpr("[0-9]+(\\.[0-9]+)?", mobile_data$Android.Ver[i]))
+  }
+  
+  if(identical(s, character(0))){
+    s<-'-1'
+  }
+  training$Android.Ver[i]<-s
+}
+training$Android.Ver<-as.numeric(training$Android.Ver)
+summary(training$Android.Ver)
+
+length(which(training$Android.Ver==-1))
+```
+
+
+# Now that we are done cleaning the data we can convert all these techniques into a function that will clean any data
+## Also we will fix training sample 6375
+
+
+```{r}
+clean_data<-function(training){
+  library(stringr)
+
+  training$Size[6375]
+
+  training$Size<-lapply(training$Size, as.character)
+  training$Size<-as.character(training$Size)
+  powers<-c()
+
+  for(i in seq(dim(training)[1])){
+    if(substr(training$Size[i],str_length(training$Size[i]),str_length(training$Size[i])) == "k"){
+      powers<-append(powers,1)
+      training$Size[i]<-gsub(".$","",training$Size[i])
+    }else if(substr(training$Size[i],str_length(training$Size[i]),str_length(training$Size[i])) == "M"){
+      powers<-append(powers,1000)
+      training$Size[i]<-gsub(".$","",training$Size[i])
+    }else if(substr(training$Size[i],str_length(training$Size[i]),str_length(training$Size[i])) == "G"){
+      powers<-append(powers,1000000)
+      training$Size[i]<-gsub(".$","",training$Size[i])
+    }else if (training$Size[i] == "Varies with device"){
+      training$Size[i]<- (-1)
+      powers<-append(powers,1)
+    }else{
+      powers<-append(powers,1)
+      training$Size[i]<-gsub(".$","",training$Size[i])
+    }
+    training$Size[i]<-gsub(",","",training$Size[i])
+  }
+
+  training$Size<-as.numeric(training$Size)
+
+  for(i in seq(dim(training)[1])){
+    training$Size[i]<-training$Size[i]*powers[i]
+  }
+  
+  
+  training$Installs<-gsub(',', '', training$Installs)
+  training$Installs<-gsub('\\+', '', training$Installs)
+  training$Installs<-as.numeric(training$Installs)
+  
+  training$Type<-as.factor(training$Type)
+  
+  training$Price<-gsub(',', '', training$Price)
+  training$Price<-gsub('\\$', '', training$Price)
+  training$Price<-as.numeric(training$Price)
+  
+  training$Rating<-as.numeric(training$Rating)
+  
+  training$Reviews<-as.numeric(training$Reviews)
+  
+  training$Content.Rating<-as.factor(training$Content.Rating)
+  
+  training$Category<-as.factor(training$Category)
+
+  training$Genres<-as.factor(training$Genres)
+  
+  training$Last.Updated<- as.Date(training$Last.Updated, format = "%B %d, %y")
+  today<-Sys.Date()
+  training$Days<-0
+  for(i in seq(dim(training)[1])){
+    training$Days[i] <- as.integer(today - training$Last.Updated[i])
+  }
+  
+  for(i in seq(dim(training)[1])){
+    s<-training$Current.Ver[i]
+    if(s=='Varies with device'){
+      s<-'0'
+    }
+    else{
+      s<-regmatches(mobile_data$Current.Ver[i], regexpr("[0-9]+(\\.[0-9]+)?", mobile_data$Current.Ver[i]))
+    }
+    
+    if(identical(s, character(0))){
+      s<-'-1'
+    }
+    training$Current.Ver[i]<-s
+  }
+  training$Current.Ver<-as.numeric(training$Current.Ver)
+  
+  for(i in seq(dim(training)[1])){
+    s<-training$Android.Ver[i]
+    if(s=='Varies with device'){
+      s<-'0'
+    }
+    else{
+      s<-regmatches(mobile_data$Android.Ver[i], regexpr("[0-9]+(\\.[0-9]+)?", mobile_data$Android.Ver[i]))
+    }
+  
+    if(identical(s, character(0))){
+      s<-'-1'
+    }
+    training$Android.Ver[i]<-s
+  }
+  training$Android.Ver<-as.numeric(training$Android.Ver)
+  
+  return(training)
+}
+```
+
+## Note by using argument name training I didnt need to change anything about my previous work 
+
+## Now lets reset the data and fix the the funky sample 6375
+## From the name of the app we can tell the app category and genre should be "PHOTOGRAPHY" and "Photography" so we will impute that as well as shift over all the data to the correct columns
+
+```{r}
+set.seed(123)
+sample <- sample.split(mob_data$Rating, SplitRatio = .70)
+training <- subset(mob_data, sample == TRUE)
+testing  <- subset(mob_data, sample == FALSE)
+
+dim(training)
+dim(testing)
+
+mess<-training[6375,]
+fixed<-mess
+
+for(i in seq(length(mess),2)){
+  fixed[i]<-mess[i-1]
+}
+fixed$Category<-"PHOTOGRAPHY"
+fixed$Genres<-"Photography"
+training[6375,]<-fixed
+
+
+training<-clean_data(training = training)
+summary(training)
+testing<-clean_data(training = testing)
+```
+
+
+# Now that our data is properly cleaned we can begin analysis and modeling
+
+## First lets decide which variables to include in our model, then I will transform the data frame into a model matrix to include dummy variables for factor levels
+
+## As mentioned previously Category and Genres are highly correlated, with Genres being more specific with smaller group sizes, so for my analysis I will drop the Genres category to avoid over fitting. 
+
+## Also previously mentioned the Type variable just signifies if the Price variable is 0 so we can drop Type
+
+## I converted the Last.Update Variable into the Days variable so we can drop Last.Update
+
+## We should not include the App name as a variable since this is just a row identifier
+
+## Ratings will be our Response variable
+
+## Thus our model features will be ("Category", "Reviews", "Size", "Installs", "Price", "Content.Rating","Current.Ver", "Android.Ver", "Days")
+
+# Now we can build our model matrix of dummy variables
+
+```{r}
+train_data<-training[c("Category", "Rating", "Reviews", "Size", "Installs", "Price", "Content.Rating","Current.Ver", "Android.Ver", "Days")]
+dummy_Train<-model.matrix(Rating~.,train_data)
+head(dummy_Train)
+
+dim(dummy_Train)
+
+train_y<-train_data$Rating
+```
+
+# From here we can now use some dimension reduction methods such as Random Forest gini importance or LASSO Regularized Regression or Principal Component Analysis to determine the variables to include in our model
+
+
+## First I will perform build a Random Forest Model and remove Features with minimum importance
+
+```{r}
+
+
+#install.packages("randomForest")
+#install.packages("e1071")
+library(randomForest)
+library(e1071)
+
+set.seed(742)
+
+rf_Model1<-randomForest(dummy_Train,train_y, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model1)
+```
+
+<div class="superbigimage">
+
+```{r}
+varImpPlot(rf_Model1, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model1, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+```
+
+</div>
+
+# Now we can see the variables ploted based on their importance based on how much their inclusion in the model improves the MSE on out of bag samples.
+
+## For the exam I was asked to show the 20 most important features so they are as follows:
+
+### 1.  Reviews
+### 2.  Size
+### 3.  Current.Ver
+### 4.  Installs
+### 5.  Android.Ver
+### 6.  Price
+### 7.  Category : FAMILY
+### 8.  Category : TOOLS
+### 9.  Category : HEALTH_AND_FITNESS
+### 10. Category : MEDICAL
+### 11. Category : FINANCE
+### 12. Category : LIFESTYLE
+### 13. Category : BUSINESS
+### 14. Category : PHOTOGRAPHY
+### 15. Content.Rating : Everyone
+### 16. Category : SPORTS
+### 17. Category : DATING
+### 18. Category : NEWS_AND_MAGAZINES
+### 19. Category : PRODUCTIVITY
+### 20. Category : GAME
+# Before we remove any categories, lets just see how the model actually performs on the training data
+
+```{r}
+preds<- predict(rf_Model1, dummy_Train)
+
+#install.packages("Metrics")
+library(Metrics)
+rmse(train_y, preds)
+```
+
+## This isnt a bad score but we can do better. Lets also look at the ability to predict a popular app, by checking how often it correctly puts Apps with a score of 3.5 or higher as popular vs apps with lower scores as not popular
+
+```{r}
+true_pop<-c()
+
+for(i in seq(length(train_y))){
+  if(train_y[i]<3.5){
+    true_pop<-append(true_pop,"Bad")  
+  }
+  else{
+    true_pop<-append(true_pop,"Popular")
+  }
+}
+
+pred_pop<-c()
+
+for(i in seq(length(train_y))){
+  if(preds[i]<3.5){
+    pred_pop<-append(pred_pop,"Bad")  
+  }
+  else{
+    pred_pop<-append(pred_pop,"Popular")
+  }
+}
+
+table(true_pop,pred_pop)
+```
+
+## Here we can see that although our model is very accurate, it actually is only really good at predictions on apps with a good rating, and struggles to predict on poor performing apps over predicting on more than half of all apps with a score less than 3.5
+
+## This may be due to the overabundance of data for which the app has a passing review score. If we think about the reason for this, there are probably more apps that fail than those which succeed but the cost to keep an app in the play store leads failed apps to not be seen in the store data as the owners will take them down.
+
+## We can also correct for this by taking the log(Ratings) in an attempt to normalize the data
+
+
+## Lets plot the residuals vs fitted to get a better idea on the fit for apps based on their actual score
+```{r}
+res<-train_y-preds
+plot(train_y,res)
+```
+
+## For this plot we would like to see a horizontal line at y=0 to indicate a descent fit, but instead we find that the residuals are getting more negative as the true score is lower. Since I set the residuals = true value - predicted, a negative value in this plot indicates that the prediction is too high, and we see as the true value gets smaller the residual is more negative meaning the fit is worse for lower rated apps.
+
+
+## Lets now restrict our model to only look at the top 20 features
+
+```{r}
+df<-data.frame(dummy_Train)
+top20<-df[c("Reviews", "Size", "Current.Ver", "Installs", "Android.Ver", "Price", "CategoryFAMILY", "CategoryTOOLS", "CategoryHEALTH_AND_FITNESS", "CategoryMEDICAL", "CategoryFINANCE", "CategoryLIFESTYLE", "CategoryBUSINESS", "CategoryPHOTOGRAPHY", "Content.RatingEveryone", "CategorySPORTS", "CategoryDATING", "CategoryNEWS_AND_MAGAZINES", "CategoryPRODUCTIVITY", "CategoryGAME")]
+
+set.seed(742)
+
+rf_Model2<-randomForest(top20,train_y, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model2)
+
+varImpPlot(rf_Model2, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model2, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+```
+
+
+## Everything looks ok now lets check the accuracy measures
+```{r}
+new_preds<- predict(rf_Model2, top20)
+rmse(train_y, new_preds)
+
+new_pred_pop<-c()
+
+for(i in seq(length(train_y))){
+  if(new_preds[i]<3.5){
+    new_pred_pop<-append(new_pred_pop,"Bad")  
+  }
+  else{
+    new_pred_pop<-append(new_pred_pop,"Popular")
+  }
+}
+
+table(true_pop,new_pred_pop)
+
+203/(203+312)
+
+(6039+203)/(203+312+6039+4)
+
+```
+
+## We can see that our overall accuracy is relatively unchanged (still 95%) and the rmse has only gone up slightly meaning our reduction in features was waranted, however we can see that the model is now worse at predicting low review scores, down to 39.4% from about 50% accuracy earlier
+
+```{r}
+new_res<-train_y-new_preds
+plot(train_y,new_res)
+```
+
+# After thinking about the possible ways to improve this I have come up with a new solution:
+## First I will develop a classifier to predict whether the rating will be bad or good, then depending on the classification, I will use a second model to predict the rating score, so we will have 3 total models, 1 model will be the classifier, 1 model will be the regressor on poor performing apps, and the 3rd model will be the predictor on high performing apps. I will build a function to run the initial classification then select the appropriate regressor model based on the classification.
+
+
+## We will need to select the appropriate predictors for all 3 models so we will start from the original dummy variable matrix in all 3 cases.
+
+
+# Building the classifier:
+### Note we need to use the true_pop as our response variable in this case 
+```{r}
+set.seed(888)
+true_pop<-as.factor(true_pop)
+pop_classifier<-randomForest(dummy_Train,true_pop, ntree=100, max_nodes = 1000, importance = T)
+
+importance(pop_classifier)
+
+varImpPlot(pop_classifier, type = 1)
+
+var.imp1 <- data.frame(importance(pop_classifier, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean Increase Gini Impurity")
+
+clas_preds<-predict(pop_classifier, dummy_Train)
+
+table(true_pop,clas_preds)
+```
+
+## This model is quite bad at predicting due to the imbalance of the class sizes, we can however use the classwt option in random forest to improve the importance of classifying bad apps. We can use this to set the predicted class size proportions
+
+```{r}
+set.seed(888)
+
+pop_classifier<-randomForest(dummy_Train,true_pop, ntree=100, max_nodes = 1000, importance = T, classwt = c(0.20, 0.80))
+
+importance(pop_classifier)
+
+varImpPlot(pop_classifier, type = 1)
+
+var.imp1 <- data.frame(importance(pop_classifier, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean Increase Gini Impurity")
+
+clas_preds<-predict(pop_classifier, dummy_Train)
+
+table(true_pop,clas_preds)
+```
+
+## I have actually set the proportions a lot more in favor to the bad class than is true but we can see that the model precision is still very strong on the popular class, and now we have 60% of bad apps predicted, I will find a good weighting before we move to the next step but we now have proof this idea will not negatively impact our model as the total accuracy has improved dramatically.
+
+## I should also note that even if our model total accuracy goes down a bit as long as we can accurately predict most of the weaker scores the secondary models will correct for any previous mistakes if the group sizes are more similar I would like my classifier to acheive above 95% sensitivity on bad apps.
+
+```{r}
+set.seed(888)
+
+pop_classifier<-randomForest(dummy_Train,true_pop, ntree=100, max_nodes = 1000, importance = T, classwt = c(0.60, 0.50))
+
+importance(pop_classifier)
+
+varImpPlot(pop_classifier, type = 1)
+
+var.imp1 <- data.frame(importance(pop_classifier, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean Increase Gini Impurity")
+
+clas_preds<-predict(pop_classifier, dummy_Train)
+
+table(true_pop,clas_preds)
+
+505/(505+10)
+```
+
+## This is probably a good enough split as we can see the number of incorrecly identified truely popular apps is now outnumbering the number of bad apps, so we will end up with the same issue of unequal group sizes if we continue to go too far.
+
+## Now I will reduce the number of features in this model to avoid overfitting
+
+## Top 20 Classification Features:
+## 1.  Reviews
+## 2.  Installs
+## 3.  Size
+## 4.  Current.Ver
+## 5.  Android.Ver
+## 6.  Price
+## 7.  CategoryFAMILY
+## 8.  CategoryTOOLS
+## 9.  CategoryGAME
+## 10. CategoryLIFESTYLE
+## 11. Content.RatingTeen
+## 12. CategoryPERSONALIZATION
+## 13. CategoryFINANCE
+## 14. CategoryBUSINESS
+## 15. CategoryMEDICAL
+## 16. CategoryTRAVEL_AND_LOCAL
+## 17. CategoryPRODUCTIVITY
+## 18. CategoryFOOD_AND_DRINK
+## 19. CategoryLIBRARIES_AND_DEMO
+## 20. CategoryEDUCATION
+```{r}
+df<-data.frame(dummy_Train)
+clas_top20<-df[c("Reviews","Installs","Size","Current.Ver","Android.Ver","Price","CategoryFAMILY","CategoryTOOLS","CategoryGAME","CategoryLIFESTYLE","Content.RatingTeen","CategoryPERSONALIZATION","CategoryFINANCE","CategoryBUSINESS","CategoryMEDICAL","CategoryTRAVEL_AND_LOCAL","CategoryPRODUCTIVITY","CategoryFOOD_AND_DRINK","CategoryLIBRARIES_AND_DEMO","CategoryEDUCATION")]
+
+pop_classifier<-randomForest(clas_top20,true_pop, ntree=100, max_nodes = 1000, importance = T, classwt = c(0.60, 0.80))
+
+importance(pop_classifier)
+
+varImpPlot(pop_classifier, type = 1)
+
+var.imp1 <- data.frame(importance(pop_classifier, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean Increase Gini Impurity")
+
+clas_preds<-predict(pop_classifier, clas_top20)
+
+table(true_pop,clas_preds)
+```
+
+## Our accuracy, specificity of popular apps have improved significantly while the sensitivity to bad apps is only slightly reduced meaning the decision to remove the variables from our model is warranted
+
+# Now we will work on developing the two regressors to predict the actuall review score
+
+## First we will split the data based on the true classes and then build a model on each subset
+
+```{r}
+lows<-which(true_pop == "Bad")
+highs<-which(true_pop == "Popular")
+low_dummy<-dummy_Train[lows,]
+high_dummy<-dummy_Train[highs,]
+low_rats<-train_y[lows]
+high_rats<-train_y[highs]
+```
+
+
+## Building the model on the lower predicted class
+```{r}
+set.seed(742)
+
+rf_Model_low<-randomForest(low_dummy,low_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_low)
+
+varImpPlot(rf_Model_low, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_low, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_low<- predict(rf_Model_low, low_dummy)
+
+rmse(low_rats, preds_low)
+
+res<-low_rats-preds_low
+plot(low_rats,res)
+```
+
+### Top 20 low score predictors
+## 1.  Reviews
+## 2.  Installs
+## 3.  Size
+## 4.  Current.Ver
+## 5.  Android.Ver
+## 6.  CategoryTOOLS
+## 7.  CategoryFAMILY
+## 8.  CategoryMEDICAL
+## 9.  CategoryFINANCE
+## 10. Price
+## 11. CategoryLIFESTYLE
+## 12. CategoryHEALTH_AND_FITNESS
+## 13. CategoryCOMMUNICATION
+## 14. CategoryDATING
+## 15. CategoryFOOD_AND_DRINK
+## 16. CategoryBUSINESS
+## 17. CategoryPHOTOGRAPHY
+## 18. CategoryNEWS_AND_MAGAZINES
+## 19. Content.RatingTeen
+## 20. CategoryGAME
+```{r}
+df<-data.frame(low_dummy)
+low_top20<-df[c("Reviews", "Installs", "Size", "Current.Ver", "Android.Ver", "CategoryTOOLS", "CategoryFAMILY", "CategoryMEDICAL", "CategoryFINANCE", "Price", "CategoryLIFESTYLE", "CategoryHEALTH_AND_FITNESS", "CategoryCOMMUNICATION", "CategoryDATING", "CategoryFOOD_AND_DRINK", "CategoryBUSINESS", "CategoryPHOTOGRAPHY", "CategoryNEWS_AND_MAGAZINES", "Content.RatingTeen", "CategoryGAME")]
+
+set.seed(452)
+
+rf_Model_low<-randomForest(low_top20,low_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_low)
+
+varImpPlot(rf_Model_low, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_low, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_low<- predict(rf_Model_low, low_dummy)
+
+rmse(low_rats, preds_low)
+
+res<-low_rats-preds_low
+plot(low_rats,res)
+```
+
+## This looks good now we will do the same for the highly rated apps
+
+```{r}
+set.seed(742)
+
+rf_Model_high<-randomForest(high_dummy,high_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_high)
+
+varImpPlot(rf_Model_high, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_high, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_high<- predict(rf_Model_high, high_dummy)
+
+rmse(high_rats, preds_high)
+
+res<-high_rats-preds_high
+plot(high_rats,res)
+```
+
+### Top 20 high score predictors
+## 1.  Reviews
+## 2.  Installs
+## 3.  Size
+## 4.  Current.Ver
+## 5.  Android.Ver
+## 6.  Price
+## 7.  CategoryFAMILY
+## 8.  CategorySPORTS
+## 9. CategoryLIFESTYLE
+## 10. CategoryGAME
+## 11. CategoryTOOLS
+## 12. CategoryMEDICAL
+## 13. CategoryBUSINESS
+## 14. Content.RatingTeen
+## 15. CategoryCOMMUNICATION
+## 16. CategoryHEALTH_AND_FITNESS
+## 17. CategoryFINANCE
+## 18. CategoryNEWS_AND_MAGAZINES
+## 19. Content.RatingMature 17+
+## 20. CategoryPERSONALIZATION
+```{r}
+df<-data.frame(high_dummy)
+high_top20<-df[c("Reviews", "Installs", "Size", "Current.Ver", "Android.Ver", "Price", "CategoryFAMILY", "CategorySPORTS", "CategoryLIFESTYLE", "CategoryGAME", "CategoryTOOLS", "CategoryMEDICAL", "CategoryBUSINESS", "Content.RatingTeen", "CategoryCOMMUNICATION", "CategoryHEALTH_AND_FITNESS", "CategoryFINANCE", "CategoryNEWS_AND_MAGAZINES", "Content.RatingMature.17.", "CategoryPERSONALIZATION")]
+
+high_top20["Content.RatingMature 17+"]<-high_top20["Content.RatingMature.17."]
+
+high_top20["Content.RatingMature.17."]<-NULL
+
+rf_Model_high<-randomForest(high_top20,high_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_high)
+
+varImpPlot(rf_Model_high, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_high, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_high<- predict(rf_Model_high, high_dummy)
+
+rmse(high_rats, preds_high)
+
+res<-high_rats-preds_high
+plot(high_rats,res)
+```
+
+
+# OK now the models are all set, but I realized 1 issue
+## After the classifier makes an initial split in the data, almost all of the points with bad ratings are sent to the low model, but we also have points that are wrongly predicted as bad being sent to this model as well. I would like to have a chance of still predicting values larger than 3.5 on samples classified as bad, so I will build a third regressor which will be an intermediary step to get a predicted value on points initialy predicted as bad. After getting a preliminary rating I will pick a cutoff rating slightly higher than 3.5 so that we are likely to catch some incorrectly classified points (the cutoff will be higher than 3.5 because this classifier will be more prone to over-estimating)
+
+## We do not need to do this for the high classified points as our initial classifier for popular apps is very pure for popular apps.
+
+```{r}
+bads<-which(clas_preds == "Bad")
+int_dummy<-dummy_Train[bads,]
+int_rats<-train_y[bads]
+
+set.seed(99999)
+
+rf_Model_int<-randomForest(int_dummy,int_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_int)
+
+varImpPlot(rf_Model_int, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_int, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_int<- predict(rf_Model_int, int_dummy)
+
+rmse(int_rats, preds_int)
+
+res<-int_rats-preds_int
+plot(int_rats,res)
+```
+
+## Int top 20 best predictors
+
+## 1.  Reviews
+## 2.  Size
+## 3.  Current.Ver
+## 4.  Installs
+## 5.  CategoryFAMILY
+## 6.  Android.Ver
+## 7.  CategoryTOOLS
+## 8.  CategoryHEALTH_AND_FITNESS
+## 9.  Price
+## 10. CategoryMEDICAL
+## 11. CategoryFINANCE
+## 12. CategoryPHOTOGRAPHY
+## 13. CategoryBUSINESS
+## 14. CategoryLIFESTYLE
+## 15. CategoryPRODUCTIVITY
+## 16. CategoryFOOD_AND_DRINK
+## 17. CategoryNEWS_AND_MAGAZINES 
+## 18. CategoryCOMMUNICATION
+## 19. CategoryTRAVEL_AND_LOCAL
+## 20. CategorySPORTS
+```{r}
+df<-data.frame(int_dummy)
+int_top20<-df[c("Reviews","Size","Current.Ver","Installs","CategoryFAMILY","Android.Ver","CategoryTOOLS","CategoryHEALTH_AND_FITNESS","Price","CategoryMEDICAL","CategoryFINANCE","CategoryPHOTOGRAPHY","CategoryBUSINESS","CategoryLIFESTYLE","CategoryPRODUCTIVITY","CategoryFOOD_AND_DRINK","CategoryNEWS_AND_MAGAZINES","CategoryCOMMUNICATION","CategoryTRAVEL_AND_LOCAL","CategorySPORTS")]
+
+rf_Model_int<-randomForest(int_top20,int_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_int)
+
+varImpPlot(rf_Model_int, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_int, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_int<- predict(rf_Model_int, int_dummy)
+
+rmse(int_rats, preds_int)
+
+res<-int_rats-preds_int
+plot(int_rats,res)
+```
+
+## From this residuals vs fitted plot we can see that for points below 3.5 we are likely to make an over estimation with a residual of around -1 which is decreasing to near 0 at a true value of 3.5. Thus it is reasonable to set our cutoff to be around 4, so that we do not send any actual low ratings over to the popular classifier but we do send actual high ratings to the popular regressor thus we will maintain the purity at the popular group and improve our popularity in the unpopular group.
+
+
+# Now to build the ensemble predictor using our trained models.
+
+
+```{r}
+predict_review<-function(dummy_matrix){
+  final_preds<-c()
+  low_df<-data.frame(dummy_matrix)
+  low_top20<-low_df[c("Reviews", "Installs", "Size", "Current.Ver", "Android.Ver", "CategoryTOOLS", "CategoryFAMILY", "CategoryMEDICAL", "CategoryFINANCE", "Price", "CategoryLIFESTYLE", "CategoryHEALTH_AND_FITNESS", "CategoryCOMMUNICATION", "CategoryDATING", "CategoryFOOD_AND_DRINK", "CategoryBUSINESS", "CategoryPHOTOGRAPHY", "CategoryNEWS_AND_MAGAZINES", "Content.RatingTeen", "CategoryGAME")]
+
+  high_df<-data.frame(dummy_matrix)
+  high_top20<-high_df[c("Reviews", "Installs", "Size", "Current.Ver", "Android.Ver", "Price", "CategoryFAMILY", "CategorySPORTS", "CategoryLIFESTYLE", "CategoryGAME", "CategoryTOOLS", "CategoryMEDICAL", "CategoryBUSINESS", "Content.RatingTeen", "CategoryCOMMUNICATION", "CategoryHEALTH_AND_FITNESS", "CategoryFINANCE", "CategoryNEWS_AND_MAGAZINES", "Content.RatingMature.17.", "CategoryPERSONALIZATION")]
+
+  high_top20["Content.RatingMature 17+"]<-high_top20["Content.RatingMature.17."]
+
+  high_top20["Content.RatingMature.17."]<-NULL
+  
+  df<-data.frame(dummy_matrix)
+  int_top20<-df[c("Reviews","Size","Current.Ver","Installs","CategoryFAMILY","Android.Ver","CategoryTOOLS","CategoryHEALTH_AND_FITNESS","Price","CategoryMEDICAL","CategoryFINANCE","CategoryPHOTOGRAPHY","CategoryBUSINESS","CategoryLIFESTYLE","CategoryPRODUCTIVITY","CategoryFOOD_AND_DRINK","CategoryNEWS_AND_MAGAZINES","CategoryCOMMUNICATION","CategoryTRAVEL_AND_LOCAL","CategorySPORTS")]
+  
+  #First we do the inital classification using pop_classifier
+  clas_preds<-predict(pop_classifier, dummy_matrix)
+  #Now we send these predictions to the appropriate regressors
+  for(i in seq(length(clas_preds))){
+    if(clas_preds[i]=="Bad"){
+      int_pred<-predict(rf_Model_int,int_top20[i,])
+      if(int_pred < 4){
+        low_pred<-predict(rf_Model_low,low_top20[i,])
+        final_preds<-append(final_preds,low_pred)
+      }
+      else{
+        high_pred<-predict(rf_Model_high, high_top20[i,])
+        final_preds<-append(final_preds,high_pred)
+      }
+    }
+    else{
+      high_pred<-predict(rf_Model_high, high_top20[i,])
+      final_preds<-append(final_preds,high_pred)
+    }
+  }
+  return(final_preds)
+}
+
+training_preds<-predict_review(dummy_Train)
+
+rmse(train_y, training_preds)
+res<-train_y-training_preds
+plot(train_y,res)
+```
+
+# Analyzing the resiudals vs fitted plot we see that we now have most of our residuals near 0 but we can see that due to the initial classification sending some of our higher predicted points to the bad rating regression model, and the rest to the high rating model, we get a split in the residuals for popular apps with those being rated by the low ap having high residuals while the majority of popular apps were rated by the high rating regression model.
+
+# We can check the new classification accuracy of the ensemble model on our training data
+
+```{r}
+pred_pop<-c()
+for(i in seq(length(training_preds))){
+  if(training_preds[i]<3.5){
+    pred_pop<-append(pred_pop,"Bad")
+  }
+  else{
+    pred_pop<-append(pred_pop,"Popular")
+  }
+}
+table(true_pop,pred_pop)
+```
+
+# We can see that the predictions on actual bad apps had stayed exactly the same while predictions on actual popular apps has improved over the original classifier in the ensemble, this indicates we may be able to lower the cutoff in the intermediate review scores a bit more as no true low score was predicted above 4.
+
+```{r}
+predict_review<-function(dummy_matrix){
+  final_preds<-c()
+  low_df<-data.frame(dummy_matrix)
+  low_top20<-low_df[c("Reviews", "Installs", "Size", "Current.Ver", "Android.Ver", "CategoryTOOLS", "CategoryFAMILY", "CategoryMEDICAL", "CategoryFINANCE", "Price", "CategoryLIFESTYLE", "CategoryHEALTH_AND_FITNESS", "CategoryCOMMUNICATION", "CategoryDATING", "CategoryFOOD_AND_DRINK", "CategoryBUSINESS", "CategoryPHOTOGRAPHY", "CategoryNEWS_AND_MAGAZINES", "Content.RatingTeen", "CategoryGAME")]
+
+  high_df<-data.frame(dummy_matrix)
+  high_top20<-high_df[c("Reviews", "Installs", "Size", "Current.Ver", "Android.Ver", "Price", "CategoryFAMILY", "CategorySPORTS", "CategoryLIFESTYLE", "CategoryGAME", "CategoryTOOLS", "CategoryMEDICAL", "CategoryBUSINESS", "Content.RatingTeen", "CategoryCOMMUNICATION", "CategoryHEALTH_AND_FITNESS", "CategoryFINANCE", "CategoryNEWS_AND_MAGAZINES", "Content.RatingMature.17.", "CategoryPERSONALIZATION")]
+
+  high_top20["Content.RatingMature 17+"]<-high_top20["Content.RatingMature.17."]
+
+  high_top20["Content.RatingMature.17."]<-NULL
+  
+  df<-data.frame(dummy_matrix)
+  int_top20<-df[c("Reviews","Size","Current.Ver","Installs","CategoryFAMILY","Android.Ver","CategoryTOOLS","CategoryHEALTH_AND_FITNESS","Price","CategoryMEDICAL","CategoryFINANCE","CategoryPHOTOGRAPHY","CategoryBUSINESS","CategoryLIFESTYLE","CategoryPRODUCTIVITY","CategoryFOOD_AND_DRINK","CategoryNEWS_AND_MAGAZINES","CategoryCOMMUNICATION","CategoryTRAVEL_AND_LOCAL","CategorySPORTS")]
+  
+  #First we do the inital classification using pop_classifier
+  clas_preds<-predict(pop_classifier, dummy_matrix)
+  #Now we send these predictions to the appropriate regressors
+  for(i in seq(length(clas_preds))){
+    if(clas_preds[i]=="Bad"){
+      int_pred<-predict(rf_Model_int,int_top20[i,])
+      if(int_pred < 4){
+        low_pred<-predict(rf_Model_low,low_top20[i,])
+        final_preds<-append(final_preds,low_pred)
+      }
+      else{
+        high_pred<-predict(rf_Model_high, high_top20[i,])
+        final_preds<-append(final_preds,high_pred)
+      }
+    }
+    else{
+      high_pred<-predict(rf_Model_high, high_top20[i,])
+      final_preds<-append(final_preds,high_pred)
+    }
+  }
+  return(final_preds)
+}
+
+training_preds<-predict_review(dummy_Train)
+
+rmse(train_y, training_preds)
+res<-train_y-training_preds
+plot(train_y,res)
+
+
+pred_pop<-c()
+for(i in seq(length(training_preds))){
+  if(training_preds[i]<3.5){
+    pred_pop<-append(pred_pop,"Bad")
+  }
+  else{
+    pred_pop<-append(pred_pop,"Popular")
+  }
+}
+table(true_pop,pred_pop)
+
+(501+5958)/(501+14+85+5958)
+
+501/(501+14)
+
+5957/(5957+86)
+```
+## After spending a little time looking for a better cutoff, I came up with 3.75 as this gives me a total accuracy on the training set of 98.49039% and a sensitivity for bad apps of 97.28155% and a specificity for popular apps of 98.57687
+
+## I did find I can improve my total accuracy on the training set slightly with a cutoff of 3.7 but this reduces my sensitivity by over  3% and I am much happier with this model to be equally precise on both groups. The 3.7 cutoff has a slightly better rmse of 0.2089657 compared to the 0.2175675 rmse of the 3.75 cutoff, but I think this is still better for predicting the rating as it is less susceptible to overfitting the training set as well.
+
+
+
+# All that is left to do is predict on our testing set
+
+## Recall that long ago I set up the testing data using our data cleaning function under the dataframe testing
+## To predict with the model all I will need to do is remove the duplicate variables as we did at the start with the training data then convert testing into a model matrix to get the dummy variables.
+
+```{r}
+test_data<-testing[c("Category", "Rating", "Reviews", "Size", "Installs", "Price", "Content.Rating","Current.Ver", "Android.Ver", "Days")]
+## There are factors in our training set which are not in our testing set so I will have to add them in as 0 column vectors to the testing dummy matrix
+test_data["Content.RatingEveryone"]<-0
+test_data["Content.RatingUnrated"]<-0
+
+dummy_Test<-model.matrix(Rating~.,test_data)
+test_y<-test_data$Rating
+
+testing_preds<-predict_review(dummy_Test)
+rmse(test_y, testing_preds)
+res<-test_y-testing_preds
+plot(test_y,res)
+
+true_test_pop<-c()
+for(i in seq(length(test_y))){
+  if(test_y[i] < 3.5){
+    true_test_pop<-append(true_test_pop,"Bad")
+  }
+  else{
+    true_test_pop<-append(true_test_pop,"Popular")
+  }
+}
+
+test_pred_pop<-c()
+for(i in seq(length(testing_preds))){
+  if(testing_preds[i]<3.5){
+    test_pred_pop<-append(test_pred_pop,"Bad")
+  }
+  else{
+    test_pred_pop<-append(test_pred_pop,"Popular")
+  }
+}
+table(true_test_pop,test_pred_pop)
+```
+
+
+# What happened? We used too many features in our models! I dont know why the Interviewer wanted me to use the top 20 features from the training data in the model, I will instead try to limit to the top 10
+
+## Also I have realized 2 things
+## 1. I forgot to include the Days variable in my list of variables so I will add that in
+## 2. My intermediate regressor model only works if I have a large number of samples on which we predicted a bad app originally, so I will tune the classifier percentages to excessively favor predicting the bad class
+
+## Retuning the Initial CLassifier on the top 10 features
+
+```{r}
+set.seed(5)
+#pop_classifier<-randomForest(dummy_Train,true_pop, ntree=100, max_nodes = 1000, importance = T, classwt = c(0.999999, 0.000001))
+pop_classifier<-randomForest(dummy_Train,true_pop, ntree=100, max_nodes = 1000, importance = T, classwt = c(1.5, 0.000001))
+importance(pop_classifier)
+
+varImpPlot(pop_classifier, type = 1)
+
+var.imp1 <- data.frame(importance(pop_classifier, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean Increase Gini Impurity")
+
+clas_preds<-predict(pop_classifier, dummy_Train)
+
+table(true_pop,clas_preds)
+```
+
+```{r}
+set.seed(5)
+df<-data.frame(dummy_Train)
+clas_top10<-df[c("Reviews","Installs","Size","CategoryPARENTING","Price","CategoryBEAUTY","CategoryEVENTS","Days","CategoryEDUCATION","CategoryWEATHER")]
+
+pop_classifier<-randomForest(clas_top10,true_pop, ntree=100, max_nodes = 1000, importance = T, classwt = c(1.5, 0.000001))
+
+importance(pop_classifier)
+
+varImpPlot(pop_classifier, type = 1)
+
+var.imp1 <- data.frame(importance(pop_classifier, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean Increase Gini Impurity")
+
+clas_preds<-predict(pop_classifier, clas_top10)
+
+table(true_pop,clas_preds)
+```
+
+```{r}
+lows<-which(true_pop == "Bad")
+highs<-which(true_pop == "Popular")
+low_dummy<-dummy_Train[lows,]
+high_dummy<-dummy_Train[highs,]
+low_rats<-train_y[lows]
+high_rats<-train_y[highs]
+```
+
+```{r}
+set.seed(742)
+
+rf_Model_low<-randomForest(low_dummy,low_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_low)
+
+varImpPlot(rf_Model_low, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_low, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_low<- predict(rf_Model_low, low_dummy)
+
+rmse(low_rats, preds_low)
+
+res<-low_rats-preds_low
+plot(low_rats,res)
+```
+
+
+## Retuning the Low Rating Regressor on the top 10 features
+
+```{r}
+df<-data.frame(low_dummy)
+low_top10<-df[c("Reviews", "Days","Installs", "Size", "Current.Ver", "Android.Ver", "CategoryMEDICAL", "CategoryFAMILY","CategoryTOOLS", "CategoryFINANCE")]
+
+set.seed(452)
+
+rf_Model_low<-randomForest(low_top10,low_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_low)
+
+varImpPlot(rf_Model_low, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_low, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_low<- predict(rf_Model_low, low_dummy)
+
+rmse(low_rats, preds_low)
+
+res<-low_rats-preds_low
+plot(low_rats,res)
+```
+
+```{r}
+set.seed(120000)
+rf_Model_high<-randomForest(high_dummy,high_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_high)
+
+varImpPlot(rf_Model_high, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_high, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_high<- predict(rf_Model_high, high_dummy)
+
+rmse(high_rats, preds_high)
+
+res<-high_rats-preds_high
+plot(high_rats,res)
+```
+
+## Retuning the High Rating Regressor on the top 10 features
+
+```{r}
+set.seed(1894)
+df<-data.frame(high_dummy)
+high_top10<-df[c("Reviews", "Installs", "Days", "Size", "Current.Ver", "Android.Ver", "Price", "CategoryFAMILY", "CategorySPORTS", "CategoryLIFESTYLE")]
+
+rf_Model_high<-randomForest(high_top10,high_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_high)
+
+varImpPlot(rf_Model_high, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_high, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_high<- predict(rf_Model_high, high_dummy)
+
+rmse(high_rats, preds_high)
+
+res<-high_rats-preds_high
+plot(high_rats,res)
+```
+
+```{r}
+bads<-which(clas_preds == "Bad")
+int_dummy<-dummy_Train[bads,]
+int_rats<-train_y[bads]
+
+set.seed(99999)
+
+rf_Model_int<-randomForest(int_dummy,int_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_int)
+
+varImpPlot(rf_Model_int, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_int, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_int<- predict(rf_Model_int, int_dummy)
+
+rmse(int_rats, preds_int)
+
+res<-int_rats-preds_int
+plot(int_rats,res)
+```
+
+```{r}
+set.seed(72)
+df<-data.frame(int_dummy)
+int_top10<-df[c("Reviews","Size","Days","Current.Ver","Installs","Android.Ver","Price","CategoryTOOLS","CategoryFAMILY","CategoryHEALTH_AND_FITNESS")]
+
+rf_Model_int<-randomForest(int_top10,int_rats, ntree=100, max_nodes = 1000, importance = T)
+
+importance(rf_Model_int)
+
+varImpPlot(rf_Model_int, type = 1)
+
+var.imp1 <- data.frame(importance(rf_Model_int, type=2))
+var.imp1$Variables <- row.names(var.imp1)
+varimp1 <- var.imp1[order(var.imp1[1],decreasing = T),]
+par(mar=c(10,5,1,1)) 
+giniplot <- barplot(t(varimp1[-2]/sum(varimp1[-2])),las=2,
+                     cex.names=0.6,
+                    main="Mean % Increase MSE Index Plot")
+
+
+preds_int<- predict(rf_Model_int, int_dummy)
+
+rmse(int_rats, preds_int)
+
+res<-int_rats-preds_int
+plot(int_rats,res)
+```
+
+## Rebuilding prediction function
+
+## This time I will include an argument for the cutoff so we can decide for ourselves if we wish to catch more bad apps or if we wish to preserve total accuracy, I will leave the default as 4 to
+
+```{r}
+predict_review<-function(dummy_matrix, int_cut = 4){
+  final_preds<-c()
+  low_df<-data.frame(dummy_matrix)
+  low_top10<-low_df[c("Reviews", "Days","Installs", "Size", "Current.Ver", "Android.Ver", "CategoryMEDICAL", "CategoryFAMILY","CategoryTOOLS", "CategoryFINANCE")]
+
+  high_df<-data.frame(dummy_matrix)
+  high_top10<-high_df[c("Reviews", "Installs", "Days", "Size", "Current.Ver", "Android.Ver", "Price", "CategoryFAMILY", "CategorySPORTS", "CategoryLIFESTYLE")]
+  
+  df<-data.frame(dummy_matrix)
+  int_top10<-df[c("Reviews","Size","Days","Current.Ver","Installs","Android.Ver","Price","CategoryTOOLS","CategoryFAMILY","CategoryHEALTH_AND_FITNESS")]
+  
+  #First we do the inital classification using pop_classifier
+  clas_preds<-predict(pop_classifier, dummy_matrix)
+  #Now we send these predictions to the appropriate regressors
+  for(i in seq(length(clas_preds))){
+    if(clas_preds[i]=="Bad"){
+      int_pred<-predict(rf_Model_int,int_top10[i,])
+      if(int_pred < int_cut){
+        low_pred<-predict(rf_Model_low,low_top10[i,])
+        final_preds<-append(final_preds,low_pred)
+      }
+      else{
+        high_pred<-predict(rf_Model_high, high_top10[i,])
+        final_preds<-append(final_preds,high_pred)
+      }
+    }
+    else{
+      high_pred<-predict(rf_Model_high, high_top10[i,])
+      final_preds<-append(final_preds,high_pred)
+    }
+  }
+  return(final_preds)
+}
+
+training_preds<-predict_review(dummy_Train)
+
+rmse(train_y, training_preds)
+res<-train_y-training_preds
+plot(train_y,res)
+
+
+pred_pop<-c()
+for(i in seq(length(training_preds))){
+  if(training_preds[i]<3.5){
+    pred_pop<-append(pred_pop,"Bad")
+  }
+  else{
+    pred_pop<-append(pred_pop,"Popular")
+  }
+}
+table(true_pop,pred_pop)
+```
+
+## Prediction on test set using default cutoff of 4
+
+```{r}
+test_data<-testing[c("Category", "Rating", "Reviews", "Size", "Installs", "Price", "Content.Rating","Current.Ver", "Android.Ver", "Days")]
+
+dummy_Test<-model.matrix(Rating~.,test_data)
+test_y<-test_data$Rating
+
+testing_preds<-predict_review(dummy_Test)
+rmse(test_y, testing_preds)
+res<-test_y-testing_preds
+plot(test_y,res)
+
+true_test_pop<-c()
+for(i in seq(length(test_y))){
+  if(test_y[i] < 3.5){
+    true_test_pop<-append(true_test_pop,"Bad")
+  }
+  else{
+    true_test_pop<-append(true_test_pop,"Popular")
+  }
+}
+
+test_pred_pop<-c()
+for(i in seq(length(testing_preds))){
+  if(testing_preds[i]<3.5){
+    test_pred_pop<-append(test_pred_pop,"Bad")
+  }
+  else{
+    test_pred_pop<-append(test_pred_pop,"Popular")
+  }
+}
+table(true_test_pop,test_pred_pop)
+```
+
+
+## Prediction on test set using extreme cutoff of 4.5 to catch the most failures
+
+```{r}
+test_data<-testing[c("Category", "Rating", "Reviews", "Size", "Installs", "Price", "Content.Rating","Current.Ver", "Android.Ver", "Days")]
+
+dummy_Test<-model.matrix(Rating~.,test_data)
+test_y<-test_data$Rating
+
+testing_preds<-predict_review(dummy_Test, 4.1)
+rmse(test_y, testing_preds)
+res<-test_y-testing_preds
+plot(test_y,res)
+
+true_test_pop<-c()
+for(i in seq(length(test_y))){
+  if(test_y[i] < 3.5){
+    true_test_pop<-append(true_test_pop,"Bad")
+  }
+  else{
+    true_test_pop<-append(true_test_pop,"Popular")
+  }
+}
+
+test_pred_pop<-c()
+for(i in seq(length(testing_preds))){
+  if(testing_preds[i]<3.5){
+    test_pred_pop<-append(test_pred_pop,"Bad")
+  }
+  else{
+    test_pred_pop<-append(test_pred_pop,"Popular")
+  }
+}
+table(true_test_pop,test_pred_pop)
+```
+
+
+# I will not do so here but if desired we can reduce the cuttoff to improve the prediction on popular apps which improves the total prediction accuracy because of the extreme inequality of group sizes.
+
+
+
+## As a reccomendation for future studies on this topic, I would recommend collecting data on apps which have been removed from the play store, as there is not enough data on failing apps to make a solid prediction on weaker apps. Our dataset suffers immensely from survivorship bias, so it is hard to build a model to predict on bad apps. Looking at the residuals from our final testing predictions, we can see that we have a strong prediction with a low rmse on apps which are predicted to have a popular rating, but our residuals still suffer for bad apps unless we specifically choose to focus on predicting them first. 
+
+## From this study it can be seen that the inequality of group sizes is an extreme hinderance to the randomForest prediction precision on new data as the model is able to split the training data too easily to allow for more robust spliting decisions to be found. We can see that the classwt option can be used to account for such issues but there is no exact way to determine the best choice of hyper parameters. Lastly we can see how the use of an ensemble of models can be used to improve predictions on data which seems to follow two distinct distributions depending on the group the data belongs too. By training a seperate model for low and high reviews we can better predict the review score in the tails of the distribution.
+
+## Lastly it can be seen that in building an ensemble model, it is sometimes necessary to forgo increases in accuracy at the moment to improve total accuracy in the split models.
+
+# In conclusion my default final model had an accuracy of 91.33% on the training set with an ability to catch 100% of true negative results. This was not the strongest model I was able to construct on the training set, but I had the most robust ability to catch bad apps in the testing set. The model had an rmse of 0.3390799 on the training data which was quite good.
+
+# On the testing set the default model had a total accuracy of 79.17408% with an ability to catch 50.068493%  of true bad apps. We can improve the total accuracy by decreasing the cutoff which at its minimum of 0 would predict every app to be popular which has a 92.22% accuracy due to the afformentioned imbalance in data distribution.
+
+# If we wish to use the model for investment decisions, the cutoff should be raised up to near the maximum of 5 in order to catch the the apps which will fail and lose us money.
+
+# At the maximum cutoff of 5.1 (since all scores are 5 or below) my model is able to catch 146 of the total 219 bad apps for a total screening sensitivity of 66.666%. At this level we attain a minimum total accuracy of 71.093% on the testing  data. We also find that the probability of selecting a bad app from the total of predicted popular apps is 3.948% which is down from 7.79% if we just selected at random from all apps
+
+## If the model is being used for investing as was suggested in the original interview exam I would suggest running the prediction function at multiple cuttoff levels to develop a confidence level for the investment in each app, a risky investor might want to invest in apps that are predicted poor at high cutoffs but safe at low cutoffs. We can recommend apps from the highest cutoff to safe investors.
+
+
+## For improvements to the model, my recomendations would be to seek information on apps which have been removed from the play store to increase the number of bad apps to train our model on. We could also develop an intermediary model for apps predicted to be popular initially, however currently we cannot do this as our data is not able to provide enough samples which are falsely predicted popular in the first step to train an intermediary the model for the popular level.
