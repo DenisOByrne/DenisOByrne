@@ -15,7 +15,8 @@ The Powerpoint Shows my skills at presenting findings of models and comparing th
 Code is presented in an RMD file. The project is based on the Spambase dataset from the UCI Machine Learning Repository to determine if an email is spam or not.
 
 
-Deciding what other projects to upload
+IBM-Data-Science-Capstone-Project is my repository for all work and my final project used to complete IBM's Data Science Professional Certification
+
 
 
 
