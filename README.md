@@ -1,4 +1,4 @@
-- 👋 Hi, I’m @DenisOByrne Im new to GitHub
+- 👋 Hi, I’m @DenisOByrne
 - 👀 I’m interested in ... Data Science - Statistics, Machine Learning, Software Enginering, Physics, Information Geometry, Quantitative Risk Management, stuff where math is involved. I am a tutor of Statistics, Physics and Calculus. Used to be a Teaching assistant for Differential Equations and Calculus 2.
 
 
@@ -10,6 +10,9 @@ The exam is a showcase of my skills in various areas of Machine Learning includi
 I recieved a 100 on this exam.
 
 
+Support Vector Regression Report is a project requested by Professor Uryasev as part of AMS 522 Bayesian Methods in Finance where we tried to include monotinicity constraints in the kernel choice. Monotonic SVR is shown to outperform OLS and Regualrized Regression on many datasets, however the computation is very intensive and makes using it not ideal on large datasets. We attempted to find a kernel choice which would contain such constraints to reduce computation however I showed throuh analysis of the dual problem that this does not seem possible. We also show an example of running monotonically constrained SVR on a dataset to show the motivation for such research.
+
+
 Spam Email Project is a project I worked on for AMS 597 again with professor Wei Zhu for May 2020
 The Powerpoint Shows my skills at presenting findings of models and comparing the models found using various machine learning algorithms.
 Code is presented in an RMD file. The project is based on the Spambase dataset from the UCI Machine Learning Repository to determine if an email is spam or not.
@@ -18,13 +21,14 @@ Code is presented in an RMD file. The project is based on the Spambase dataset f
 IBM-Data-Science-Capstone-Project is my repository for all work and my final project used to complete IBM's Data Science Professional Certification. I completed the courses and earned my Certification on February 21st, 2022
 
 
-IBM-Machine-Learning-Professional-Certificate is my repository for my final Machine Learning Projects completed as part of IBM's Machine Learning Professional Certification. I am currently working on the 3rd of 6 courses in the Certification. There is an intermediary certification after completing the 4th course, which I am hoping to attain by the end of April 2022.
+IBM-Machine-Learning-Professional-Certificate is my repository for my final Machine Learning Projects completed as part of IBM's Machine Learning Professional Certification. I am currently working on the 4th of 6 courses in the Certification. There is an intermediary certification after completing the 4th course, which I am hoping to attain during May 2022.
 Courses Completed:
 1. Exploratory Data Analysis for Machine Learning
 2. Supervised Machine Learning: Regression
+3. Supervised Machine Learning: Classification
 
 Currently in Progress:
-1. Supervised Machine Learning: Classification
+1. Unsupervised Machine Learning
 
 
 
